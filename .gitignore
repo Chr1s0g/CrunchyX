@@ -1,0 +1,5 @@
+packaging/arch/*.pkg.tar.*
+packaging/debian/*.deb
+packaging/debian/crunchyx_*/
+*.swp
+.DS_Store

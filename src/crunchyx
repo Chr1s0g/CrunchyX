@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_NAME="CrunchyX"
+APP_VERSION="0.2.0"
+APP_BUILD="20260911"
+CRUNCHY_URL="${CRUNCHYX_URL:-https://www.crunchyroll.com/}"
+PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/crunchyx"
+
+print_version() {
+    printf '%s %s\nBuild: %s\n' "$APP_NAME" "$APP_VERSION" "$APP_BUILD"
+}
+
+usage() {
+    cat <<EOF
+$APP_NAME $APP_VERSION (build $APP_BUILD)
+
+Usage: crunchyx [options]
+
+  --version              Show version/build
+  --diagnose             Show browser/system diagnostics
+  --browser PATH         Use a specific Chrome/Chromium executable
+  --url URL              Open a specific URL
+  --reset-profile        Remove the CrunchyX browser profile
+  --help                 Show this help
+EOF
+}
+
+find_browser() {
+    local candidates=(
+        "${CRUNCHYX_BROWSER:-}"
+        google-chrome-stable
+        google-chrome
+        chromium
+        chromium-browser
+    )
+    local b
+    for b in "${candidates[@]}"; do
+        [[ -n "$b" ]] || continue
+        if [[ "$b" == */* ]]; then
+            [[ -x "$b" ]] && { printf '%s\n' "$b"; return 0; }
+        else
+            command -v "$b" >/dev/null 2>&1 && { command -v "$b"; return 0; }
+        fi
+    done
+    return 1
+}
+
+diagnose() {
+    local browser
+    echo "$APP_NAME $APP_VERSION"
+    echo "Build:           $APP_BUILD"
+    echo "URL:             $CRUNCHY_URL"
+    echo "Profile:         $PROFILE_DIR"
+    echo "Kernel:          $(uname -srmo 2>/dev/null || echo unknown)"
+    echo "Distribution:    $(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-unknown}" || echo unknown)"
+    echo "Desktop:         ${XDG_CURRENT_DESKTOP:-unknown}"
+    echo "Session:         ${XDG_SESSION_TYPE:-unknown}"
+    if browser="$(find_browser)"; then
+        echo "Browser:         $browser"
+        echo "Browser version: $("$browser" --version 2>/dev/null || echo unknown)"
+    else
+        echo "Browser:         NOT FOUND"
+        return 1
+    fi
+}
+
+reset_profile() {
+    if [[ ! -d "$PROFILE_DIR" ]]; then
+        echo "No CrunchyX profile exists at: $PROFILE_DIR"
+        return
+    fi
+    read -r -p "Remove '$PROFILE_DIR'? [y/N] " answer
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+        rm -rf -- "$PROFILE_DIR"
+        echo "CrunchyX profile removed."
+    else
+        echo "Cancelled."
+    fi
+}
+
+BROWSER=""
+URL="$CRUNCHY_URL"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version|-v) print_version; exit 0 ;;
+        --diagnose) diagnose; exit $? ;;
+        --browser) [[ $# -ge 2 ]] || { echo "Missing path after --browser" >&2; exit 2; }; BROWSER="$2"; shift 2 ;;
+        --url) [[ $# -ge 2 ]] || { echo "Missing URL after --url" >&2; exit 2; }; URL="$2"; shift 2 ;;
+        --reset-profile) reset_profile; exit 0 ;;
+        --help|-h) usage; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+if [[ -n "$BROWSER" ]]; then
+    [[ -x "$BROWSER" ]] || { echo "Browser is not executable: $BROWSER" >&2; exit 1; }
+else
+    BROWSER="$(find_browser)" || {
+        echo "No supported Chrome/Chromium browser was found." >&2
+        echo "Arch:   sudo pacman -S chromium" >&2
+        echo "Debian: sudo apt install chromium" >&2
+        exit 1
+    }
+fi
+
+mkdir -p "$PROFILE_DIR"
+exec "$BROWSER" \
+  --app="$URL" \
+  --user-data-dir="$PROFILE_DIR" \
+  --class="CrunchyX" \
+  --name="CrunchyX" \
+  --disable-features=Translate
